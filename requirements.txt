@@ -1,0 +1,9 @@
+numpy
+pyaudio
+ollama
+psutil
+keyboard
+pywin32
+faster-whisper
+AppOpener
+PyQt6
