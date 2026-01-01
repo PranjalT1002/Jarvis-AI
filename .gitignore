@@ -1,0 +1,23 @@
+# Python bytecode (compiled files)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary audio files created by Jarvis
+j_*.wav
+query.wav
+
+# System/IDE files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Large model files (don't upload these, provide links instead)
+*.onnx
+*.exe
