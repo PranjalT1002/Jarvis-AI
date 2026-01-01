@@ -13,19 +13,12 @@ A sophisticated, multi-threaded AI assistant inspired by Iron Man's JARVIS. This
 - **🔊 High-Quality Voice:** Utilizes **Piper TTS** for a natural-sounding local voice engine.
 - **🛠️ Integrated Tools:** Voice-activated app launching, Google searching, and system time/date queries.
 
-## 🛠️ Technical Architecture
+## 🚀 Setup
+1. Install [Ollama](https://ollama.com/) and run `ollama pull llama3.2:3b`.
+2. Place `piper.exe` and voice models in `C:\Jarvis\`.
+3. Install dependencies: `pip install -r requirements.txt`.
+4. Run `python main.py`.
 
-
-This system uses a **Producer-Consumer threading model**:
-1. **The Brain (Producer):** Handles heavy STT/LLM tasks on a background thread to keep the UI responsive.
-2. **The HUD (Consumer):** Updates the visual interface at 60 FPS using a dedicated timer loop.
-
-## 🚀 Setup & Installation
-
-### 1. Prerequisites
-- **Ollama:** [Download here](https://ollama.com/) and run `ollama pull llama3.2:3b`.
-- **Piper TTS:** Place `piper.exe` and your `.onnx` voice model in `C:\Jarvis\`.
-
-### 2. Installation
-Clone this repository or download the source code, then install the dependencies:
-pip install -r requirements.txt
+## ⌨️ Hotkeys
+- `Ctrl + Shift + J + O`: Talk
+- `Ctrl + Shift + J + C`: Cancel
