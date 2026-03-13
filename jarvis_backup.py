@@ -8,23 +8,19 @@ import uuid
 import time
 import wave
 import winsound
-import psutil
-import keyboard
+import webbrowser
 import pyaudio
 import ollama
-from AppOpener import open as open_app
+import psutil
+import keyboard
 from faster_whisper import WhisperModel
+from AppOpener import open as open_app
 from PyQt6.QtWidgets import QApplication, QWidget
 from PyQt6.QtCore import QTimer, Qt, QRectF, QThread, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QConicalGradient
 
-# --- Import Local Modular Skills ---
-from core import memory
-from skills import system_ops
-from skills import productivity
-from skills import vision_web
 
-
+# --- 1. THE BRAIN (Backend Processing) ---
 class JarvisBrain(QThread):
     log_signal = pyqtSignal(str)
     abort_signal = pyqtSignal()
@@ -32,30 +28,29 @@ class JarvisBrain(QThread):
     def __init__(self):
         super().__init__()
         self.speech_queue = queue.Queue()
-        # Initialize context from long-term memory
         self.chat_history = [
             {
                 "role": "system",
-                "content": 'You are Jarvis, a sophisticated AI assistant running locally. Use "Sir".',
+                "content": 'You are Jarvis, a sophisticated assistant. Use "Sir".',
             }
         ]
-        # Load last 10 interactions from memory to maintain context
-        recent_history = memory.get_recent_chat_context(10)
-        self.chat_history.extend(recent_history)
-
+        # PATH CONFIGURATION - Ensure these paths are correct for your PC
         self.PIPER_EXE = r"C:\Jarvis\piper.exe"
         self.VOICE_MODEL = r"C:\Jarvis\voice\en_GB-jarvis-medium.onnx"
         self.is_listening = False
         self.current_proc = None
 
     def run(self):
+        # 1. Initialize TTS Worker first
         threading.Thread(target=self.tts_worker, daemon=True).start()
 
+        # 2. JARVIS STARTUP GREETING
         self.log_signal.emit("SYSTEM ONLINE")
-        self.speak("Systems online. Modules loaded. Jarvis is at your service, Sir.")
+        self.speak("Systems online. Jarvis is at your service, Sir.")
 
-        self.log_signal.emit("LOADING STT (MAY DOWNLOAD ON 1ST RUN)...")
-        stt_engine = WhisperModel("small.en", device="cpu", compute_type="int8")
+        # 3. Load heavy STT model
+        self.log_signal.emit("LOADING NEURAL CORE...")
+        stt_engine = WhisperModel("base.en", device="cpu", compute_type="int8")
 
         pa = pyaudio.PyAudio()
         stream = pa.open(
@@ -68,6 +63,7 @@ class JarvisBrain(QThread):
 
         self.log_signal.emit("ALL SYSTEMS NOMINAL")
 
+        # HOTKEYS: TALK [CTRL+SHIFT+J+O], CANCEL [CTRL+SHIFT+J+C]
         keyboard.add_hotkey(
             "ctrl+shift+j+o", lambda: self.trigger_listening(stream, stt_engine)
         )
@@ -82,19 +78,8 @@ class JarvisBrain(QThread):
             user_text = self.capture_and_transcribe(stream, engine)
             if user_text:
                 self.log_signal.emit(f"USER: {user_text}")
-
-                # Log to memory database
-                memory.log_chat("user", user_text)
-
-                # Route through skills first
-                answer = self.route_query(user_text)
-                if not answer:
-                    answer = self.handle_llm_chat(user_text)
-
-                # Log response to memory database
-                memory.log_chat("assistant", answer)
+                answer = self.handle_query(user_text)
                 self.speak(answer)
-
             self.is_listening = False
 
     def capture_and_transcribe(self, stream, engine):
@@ -102,6 +87,7 @@ class JarvisBrain(QThread):
         frames = []
         stream.stop_stream()
         stream.start_stream()
+        # Record for 4 seconds
         for _ in range(0, int(16000 / 1280 * 4)):
             if keyboard.is_pressed("ctrl+shift+j+c"):
                 return None
@@ -118,73 +104,39 @@ class JarvisBrain(QThread):
         text = " ".join([s.text for s in segments]).strip()
         return text if text else None
 
-    def route_query(self, query):
-        """Passes the query through available modules. Returns a string answer if handled."""
-        query_lower = query.lower()
+    def handle_query(self, query):
+        query = query.lower()
 
-        # 1. System Controls
-        sys_res = system_ops.handle_system_query(query_lower)
-        if sys_res:
-            return sys_res
-
-        # 2. Productivity Tools
-        prod_res = productivity.handle_productivity_query(query_lower)
-        if prod_res:
-            # Special case for taking notes (multi-turn logic hint)
-            if "I am ready. What would you like me to note down" in prod_res:
-                return prod_res
-            return prod_res
-
-        # 3. Time / Date (Core)
-        if "time" in query_lower or "date" in query_lower:
+        # --- TOOL: TIME & DATE ---
+        if "time" in query or "date" in query:
             now = datetime.datetime.now()
-            if "date" in query_lower:
+            if "date" in query:
                 return f"Today is {now.strftime('%A, %B %d, %Y')}, Sir."
             return f"It is currently {now.strftime('%I:%M %p')}."
 
-        # 4. App Launcher
-        if "open" in query_lower or "launch" in query_lower:
-            app = query_lower.replace("open", "").replace("launch", "").strip()
+        # --- TOOL: APPS ---
+        if "open" in query or "launch" in query:
+            app = query.replace("open", "").replace("launch", "").strip()
             open_app(app, match_closest=True)
             return f"Opening {app}, Sir."
 
-        # 5. Vision AI capability
-        if (
-            "what is on my screen" in query_lower
-            or "what's on my screen" in query_lower
-            or "whats on my screen" in query_lower
-            or "read my screen" in query_lower
-            or "look at my screen" in query_lower
-        ):
-            self.log_signal.emit("ANALYZING SCREEN...")
-            return vision_web.read_screen(query)
+        # --- TOOL: WEB ---
+        if "google" in query or "search" in query:
+            term = query.replace("google", "").replace("search", "").strip()
+            webbrowser.open(f"https://www.google.com/search?q={term}")
+            return f"Searching for {term} on Google."
 
-        # 6. Web Scraper
-        if "search the web for" in query_lower:
-            term = query_lower.replace("search the web for", "").strip()
-            self.log_signal.emit(f"SCRAPING WEB FOR {term.upper()}...")
-            return vision_web.search_and_summarize(term)
-
-        # None of the hardcoded skills caught it, pass to LLM
-        return None
-
-    def handle_llm_chat(self, query):
+        # --- LLM CHAT ---
         self.chat_history.append({"role": "user", "content": query})
-
-        # Context management: limit to last 20 messages to save RAM
-        if len(self.chat_history) > 20:
-            self.chat_history = [self.chat_history[0]] + self.chat_history[-19:]
-
         try:
-            self.log_signal.emit("THINKING...")
             response = ollama.chat(model="llama3.2:3b", messages=self.chat_history)
             reply = response["message"]["content"]
             self.chat_history.append({"role": "assistant", "content": reply})
             return reply
-        except Exception as e:
-            err_msg = str(e)
-            self.log_signal.emit(f"LLM ERR: {err_msg[:40]}")
-            return "The local neural core is unreachable. Please ensure Ollama is running."
+        except Exception:
+            return (
+                "The local neural core is unreachable. Please ensure Ollama is running."
+            )
 
     def stop_jarvis(self):
         self.abort_signal.emit()
@@ -193,14 +145,14 @@ class JarvisBrain(QThread):
             try:
                 self.speech_queue.get_nowait()
                 self.speech_queue.task_done()
-            except Exception:
+            except:
                 break
         if self.current_proc:
             try:
                 subprocess.call(
                     ["taskkill", "/F", "/T", "/PID", str(self.current_proc.pid)]
                 )
-            except Exception:
+            except:
                 pass
         winsound.PlaySound(None, winsound.SND_PURGE)
 
@@ -211,14 +163,9 @@ class JarvisBrain(QThread):
         while True:
             text = self.speech_queue.get()
             out = os.path.join(os.environ["TEMP"], f"j_{uuid.uuid4().hex}.wav")
+            # Using Piper for high-quality local voice
             cmd = [self.PIPER_EXE, "--model", self.VOICE_MODEL, "--output_file", out]
-            self.current_proc = subprocess.Popen(
-                cmd, 
-                stdin=subprocess.PIPE, 
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True
-            )
+            self.current_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
             self.current_proc.communicate(input=text)
             if os.path.exists(out):
                 time.sleep(0.1)
@@ -228,7 +175,7 @@ class JarvisBrain(QThread):
             self.current_proc = None
 
 
-# --- UI (Remains unchanged for familiarity) ---
+# --- 2. THE INTERFACE (HUD) ---
 class JarvisHUD(QWidget):
     def __init__(self):
         super().__init__()
@@ -253,6 +200,7 @@ class JarvisHUD(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         screen = QApplication.primaryScreen().geometry()
+        # Position in bottom right
         self.setGeometry(screen.width() - 620, screen.height() - 650, 600, 600)
 
     def trigger_red_alert(self):
@@ -276,6 +224,7 @@ class JarvisHUD(QWidget):
         cx, cy = self.width() // 2, self.height() // 2
         now = datetime.datetime.now()
 
+        # Rotating Arc (Visualizer)
         p.save()
         p.translate(cx, cy)
         p.rotate(self.angle)
@@ -286,10 +235,12 @@ class JarvisHUD(QWidget):
         p.drawArc(QRectF(-150, -150, 300, 300), 0, 150 * 16)
         p.restore()
 
+        # Center Clock
         p.setPen(self.theme_color)
         p.setFont(QFont("Consolas", 32, QFont.Weight.Bold))
         p.drawText(cx - 95, cy + 15, now.strftime("%H:%M:%S"))
 
+        # Stats & Logs
         p.setFont(QFont("Consolas", 10))
         p.drawText(
             40,
